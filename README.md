@@ -53,11 +53,7 @@
 
 **[✅ Voir les applications certifiées](https://audio-arcade.odoo.com/sdk-doc/arcade-share-server/certified-apps)**
 
----
-
-## ⚠️ Accès bêta — À lire avant d'intégrer
-
-> Si un accès bêta est actif, ne l'intégrez pas dans une version stable de votre application. Les versions bêta font l'objet de correctifs réguliers afin d'atteindre le niveau de qualité requis par le SDK. Intégrer une bêta en production peut provoquer des bugs imprévus pour vos utilisateurs. Attendez toujours une version stable avant tout déploiement en production.
+> 🔎 **Depuis la V3, le SDK expose la certification.** Ton application peut savoir si elle est elle-même certifiée, consulter le statut public d'une application à partir de son nom et, côté invité, savoir si l'application de l'hôte est certifiée. Rien n'est bloqué : c'est une information à afficher à l'utilisateur (voir [section 7](#7-certification-de-lapplication)).
 
 ---
 
@@ -76,8 +72,9 @@
 5. [Rooms permanentes](#4-rooms-permanentes)
 6. [Mode Invité — Live](#5-mode-invité--live)
 7. [Envoi de musique](#6-envoi-de-musique)
-8. [Référence des méthodes](#7-référence-des-méthodes)
-9. [Référence des événements](#8-référence-des-événements)
+8. [Certification de l'application](#7-certification-de-lapplication)
+9. [Référence des méthodes](#8-référence-des-méthodes)
+10. [Référence des événements](#9-référence-des-événements)
 
 ---
 
@@ -95,6 +92,7 @@ Chaque application qui utilise ArcadeShare doit posséder son propre `appId`, fo
 | `appId` inconnu ou désactivé | `OnAuthRejected` + exception `UnauthorizedAccessException` à `ConnectAsync()` |
 | Version du SDK dépréciée (fonctionne encore) | `OnDeprecatedVersion` |
 | Version du SDK inconnue | Connexion refusée : télécharge la dernière version du SDK |
+| Application non certifiée | Aucun blocage : `IsCertified` vaut `false` (voir section 7) |
 
 > ⚠️ Ne modifie pas la valeur de `versionId` dans le code du SDK : le serveur connaît la correspondance réelle entre cet identifiant et la version publiée, et refuse une version dépréciée ou inconnue.
 
@@ -104,7 +102,7 @@ Chaque application qui utilise ArcadeShare doit posséder son propre `appId`, fo
 
 Télécharge d'abord le fichier `ArcadeShareServer.dll` :
 
-**[⬇ Télécharger ArcadeShareServer.dll](https://github.com/Audio-Arcade/Audio_Arcade_SDK/releases/download/V2/ArcadeShareServer.dll)**
+**[⬇ Télécharger ArcadeShareServer.dll](https://github.com/Audio-Arcade/Audio_Arcade_SDK/releases/download/V3/ArcadeShareServer.dll)**
 
 Ajoute le fichier suivant à ton projet Visual Studio :
 
@@ -206,6 +204,11 @@ client.OnGuestLeft += info =>
 client.OnAuthRejected += reason => Console.WriteLine(reason);
 client.OnDeprecatedVersion += msg => Console.WriteLine(msg);
 
+client.OnCertificationChanged += certified =>      // true / false, informatif (voir section 7)
+    Console.WriteLine($"Application certifiée : {certified}");
+
+client.OnReconnectFailed += () => { /* reconnexion abandonnée : arrête le cast */ };
+
 await client.ConnectAsync();
 await client.CreateRoomAsync(
     username:     "Mon Pseudo",
@@ -214,7 +217,7 @@ await client.CreateRoomAsync(
 _arcadeShareServer = client;
 ```
 
-> ℹ️ La reconnexion après une coupure réseau est **automatique** (8 tentatives, délai croissant) : n'ajoute pas ta propre logique dans `OnDisconnected`. Après une reconnexion, `OnRoomCreated` est déclenché à nouveau pour la même room : affiche ton message « Cast démarré » une seule fois.
+> ℹ️ La reconnexion après une coupure réseau est **automatique** (jusqu'à 25 tentatives, délai croissant plafonné à 15 s, soit environ 5 minutes — la durée pendant laquelle le serveur conserve la room de l'hôte) : n'ajoute pas ta propre logique dans `OnDisconnected`. Après une reconnexion, `OnRoomCreated` est déclenché à nouveau pour la même room : affiche ton message « Cast démarré » une seule fois. Si toutes les tentatives échouent, `OnReconnectFailed` est déclenché, puis `OnError`.
 
 ### Boucle d'envoi d'état (toutes les 2 secondes)
 
@@ -333,7 +336,7 @@ private ArcadeShareClient _arcadeShareServer = null;
 private bool isGuest => _arcadeShareServer != null && !_arcadeShareServer.IsHost;
 
 private bool   _guestPausedManually = false;
-private string _guestCurrentTitle   = "";
+private string _guestCurrentKey     = "";
 private string _guestTempFile       = null;
 private bool   _guestIsLoading      = false;
 ```
@@ -347,7 +350,7 @@ var client = ArcadeShareConfig.CreateClient();
 _arcadeShareServer = client;   // dès maintenant : isGuest est vrai pendant la connexion
 
 client.OnRoomJoined += info =>
-    Console.WriteLine($"Connecté chez {info.HostName}");
+    Console.WriteLine($"Connecté chez {info.HostName}");   // info.HostCertified : true / false / null (voir section 7)
 
 client.OnStateReceived += state =>
     AppliquerEtatDistant(state, roomCode);
@@ -360,6 +363,16 @@ client.OnHostLeft += () =>
 };
 
 client.OnError += msg => Console.WriteLine(msg);   // room introuvable, room pleine...
+
+// Coupure réseau : le client se reconnecte tout seul et rejoint à nouveau la room.
+// N'appelle PAS client.Dispose() dans OnDisconnected : cela annulerait la reconnexion.
+client.OnReconnecting += attempt => Console.WriteLine($"Reconnexion… ({attempt})");
+client.OnReconnectFailed += () =>      // abandon : quitte la room côté application
+{
+    _arcadeShareServer = null;
+    client.Dispose();
+    StopGuestPlayback();
+};
 
 await client.ConnectAsync();
 await client.JoinRoomAsync(
@@ -383,22 +396,25 @@ private void AppliquerEtatDistant(StateUpdate state, string roomCode)
         if (trackName != newName) { trackName = newName; scrollPos = 0; }
     }
 
-    // Nouvelle piste détectée → télécharger
-    bool fileChanged = !string.IsNullOrEmpty(state.CurrentFile)
-                    && state.CurrentFile != _guestCurrentTitle;
+    if (string.IsNullOrEmpty(state.CurrentFile)) return;   // l'hôte n'a pas (encore) de musique
 
-    if (fileChanged && !_guestIsLoading)
+    // Clé = room + fichier : évite de confondre deux rooms qui diffusent un fichier de même nom
+    string key = $"{roomCode}|{state.CurrentFile}";
+
+    // Nouvelle piste détectée → télécharger (un seul téléchargement à la fois)
+    if (key != _guestCurrentKey)
     {
+        if (_guestIsLoading) return;   // le prochain état (≈ 2 s) refera la comparaison
+
         _guestPausedManually = false;
         _guestIsLoading      = true;
-        string fileToLoad    = state.CurrentFile;
 
         _ = Task.Run(async () =>
         {
             try
             {
-                bool ok = await LoadGuestMusicAsync(roomCode, state.Position, state.IsPlaying);
-                if (ok) _guestCurrentTitle = fileToLoad;   // sinon : nouvel essai au prochain état (2 s)
+                bool ok = await LoadGuestMusicAsync(roomCode, state.Position, state.IsPlaying, state.CurrentFile);
+                if (ok) _guestCurrentKey = key;   // sinon : nouvel essai au prochain état (2 s)
             }
             finally { _guestIsLoading = false; }
         });
@@ -420,16 +436,18 @@ private void AppliquerEtatDistant(StateUpdate state, string roomCode)
 }
 ```
 
-> ⚠️ Mémorise le fichier courant (`_guestCurrentTitle`) **seulement après un téléchargement réussi**. Sinon, un seul échec réseau empêcherait définitivement de réessayer pour cette piste.
+> ⚠️ Mémorise le fichier courant (`_guestCurrentKey`) **seulement après un téléchargement réussi**. Sinon, un seul échec réseau empêcherait définitivement de réessayer pour cette piste.
 
 ### Téléchargement et lecture de la musique
 
 ```csharp
-private async Task<bool> LoadGuestMusicAsync(string roomCode, double startPos, bool shouldPlay)
+private async Task<bool> LoadGuestMusicAsync(string roomCode, double startPos, bool shouldPlay, string currentFile)
 {
-    // Le SDK gère le téléchargement, l'extension et le nommage du fichier temporaire
+    // Le SDK gère le téléchargement, l'extension et le nommage du fichier temporaire.
+    // currentFile (StateUpdate.CurrentFile) évite de réutiliser un cache périmé pour une nouvelle piste.
     using var client = ArcadeShareConfig.CreateClient();
-    string? tempPath = await client.DownloadRoomMusicAsync(roomCode, Path.GetTempPath());
+    string? tempPath = await client.DownloadRoomMusicAsync(
+        roomCode, Path.GetTempPath(), currentFile: currentFile);
     if (tempPath == null) return false;   // échec : le son en cours n'est pas coupé
 
     BeginInvoke(() =>
@@ -455,6 +473,8 @@ private async Task<bool> LoadGuestMusicAsync(string roomCode, double startPos, b
 }
 ```
 
+> ℹ️ Pour lire en streaming plutôt que télécharger, `client.GetStreamUrl(roomCode, state.CurrentFile)` donne l'URL authentifiée de la musique de la room.
+
 ### Quitter la room / arrêter la lecture invité
 
 ```csharp
@@ -467,7 +487,7 @@ StopGuestPlayback();
 
 private void StopGuestPlayback()
 {
-    _guestCurrentTitle = "";
+    _guestCurrentKey   = "";
     _guestIsLoading    = false;
     outputDevice?.Stop(); outputDevice?.Dispose(); outputDevice = null;
     audioFile?.Dispose(); audioFile = null;
@@ -521,11 +541,68 @@ await _arcadeShareServer.NotifyMusicEndedAsync();
 | Formats acceptés | `.mp3` `.flac` `.wav` `.ogg` `.aac` `.m4a` `.opus` (les `.mid` sont refusés) |
 | Taille maximale | 200 Mo |
 
+| Refus du serveur | Réaction du SDK |
+|---|---|
+| 413 — fichier trop volumineux | `OnError("Fichier trop volumineux pour le serveur.")`, pas de nouvelle tentative |
+| 415 — format non pris en charge | `OnError("Format audio non pris en charge par le serveur.")`, pas de nouvelle tentative |
+| 401 / 403 — application non autorisée | `OnError("Envoi refusé par le serveur (application non autorisée).")`, pas de nouvelle tentative |
+| Erreur réseau ou serveur | 3 tentatives, puis `OnError("Impossible d'envoyer la musique au serveur.")` |
+
+> ℹ️ **V3** : `UploadMusicAsync` retourne `true` seulement si le serveur sert réellement le fichier après l'envoi (vérification automatique) ; sinon `false`, et la raison est donnée par `OnError`.
+
 > ℹ️ Le fichier est aussi uploadé au démarrage du cast si une musique est déjà en cours (dans `OnRoomCreated`), pour que les invités qui se connectent reçoivent la bonne piste sans attendre le prochain `PlayAt`.
 
 ---
 
-## 7. Référence des méthodes
+## 7. Certification de l'application
+
+Le serveur sait si ton application est certifiée par Audio_Arcade. Cette information est **purement informative** : une application non certifiée continue de fonctionner. Elle te permet d'afficher un indicateur (accueil, paramètres, page des codes…) pour que l'utilisateur sache à qui il confie son code de session.
+
+### Certification de ta propre application
+
+```csharp
+client.OnCertificationChanged += certified =>   // bool? : true / false, à chaque authentification réussie
+{
+    // mets à jour ton indicateur (repasse sur le thread de l'interface : BeginInvoke / Dispatcher)
+};
+
+bool? c = client.IsCertified;   // null tant qu'aucune connexion authentifiée n'a eu lieu
+```
+
+> ℹ️ `IsCertified` n'est connu qu'après `ConnectAsync()`. Pour afficher le statut dès l'accueil, sans client connecté, utilise `FetchCertificationStatusAsync`.
+
+### Statut public d'une application (par son nom)
+
+```csharp
+// Méthode statique : ni connexion, ni room, ni appId nécessaires
+string? status = await ArcadeShareClient.FetchCertificationStatusAsync("Audio_Arcade");
+// "certified" | "partial" | "unverified" | "revoked" | null (serveur injoignable)
+```
+
+| Statut | Signification |
+|---|---|
+| `certified` | Application certifiée par Audio_Arcade |
+| `partial` | Certification partielle |
+| `unverified` | Application non vérifiée / non certifiée |
+| `revoked` | Certification révoquée |
+| `null` | Statut indisponible (réseau ou serveur injoignable) |
+
+> ℹ️ Cette requête est publique et ne révèle jamais l'`appId`.
+
+### Certification de l'application de l'hôte (invité)
+
+```csharp
+client.OnHostCertification += certified =>   // bool? : true / false / null (inconnue)
+{
+    // déclenché juste avant OnRoomJoined ; la même valeur est dans info.HostCertified et client.HostCertified
+};
+```
+
+> ℹ️ Les événements sont déclenchés sur un thread d'arrière-plan : repasse sur le thread de l'interface avant de modifier un contrôle.
+
+---
+
+## 8. Référence des méthodes
 
 | Méthode | Description | Accès |
 |---|---|---|
@@ -540,7 +617,9 @@ await _arcadeShareServer.NotifyMusicEndedAsync();
 | `UploadMusicAsync(filePath)` | Upload le fichier audio (envoi en flux). Retourne `bool` | Hôte |
 | `NotifyMusicEndedAsync()` | Signale la fin de piste | Hôte |
 | `JoinRoomAsync(code, username, deviceSerial)` | Rejoint une room en tant qu'invité | Invité |
-| `DownloadRoomMusicAsync(roomCode, destDir)` | Télécharge la musique courante de la room (retourne le chemin, ou `null`) | Invité |
+| `DownloadRoomMusicAsync(roomCode, destDir, ct, currentFile)` | Télécharge la musique courante de la room (retourne le chemin, ou `null`). `currentFile` : nom du fichier courant (`StateUpdate.CurrentFile`), optionnel | Invité |
+| `GetStreamUrl(roomCode, currentFile)` | URL authentifiée de la musique de la room (lecture en streaming) | Invité |
+| `ArcadeShareClient.FetchCertificationStatusAsync(appName)` | Méthode **statique** : statut public d'une application d'après son nom | Tous |
 | `LeaveRoomAsync()` | Quitte la room (room conservée) | Tous |
 | `DisconnectAsync()` | Déconnexion propre (désactive la reconnexion automatique) | Tous |
 | `Dispose()` | Libère les ressources | Tous |
@@ -552,10 +631,13 @@ await _arcadeShareServer.NotifyMusicEndedAsync();
 | `IsConnected` | `bool` | Connexion WebSocket active |
 | `CurrentRoomCode` | `string?` | Code de la room en cours |
 | `IsHost` | `bool` | Vrai si le client est hôte (devient vrai après `CreateRoomAsync` ou `RejoinRoomAsync`) |
+| `IsCertified` | `bool?` | Certification de ton application (`null` = pas encore connu) |
+| `HostCertified` | `bool?` | (Invité) Certification de l'application de l'hôte (`null` = inconnue) |
+| `ArcadeShareClient.SDK_VERSION` | `string` | Version du SDK (constante) |
 
 ---
 
-## 8. Référence des événements
+## 9. Référence des événements
 
 | Événement | Paramètre | Déclenché quand |
 |---|---|---|
@@ -563,15 +645,28 @@ await _arcadeShareServer.NotifyMusicEndedAsync();
 | `OnAuthRejected` | `string reason` | Le serveur refuse l'application (appId inconnu ou désactivé, version inconnue) |
 | `OnDeprecatedVersion` | `string message` | Version du SDK dépréciée (la connexion fonctionne, mise à jour conseillée) |
 | `OnRoomCreated` | `string code` | Room créée ou reprise (aussi après une reconnexion) |
-| `OnRoomJoined` | `RoomJoinedResponse` | Invité connecté à la room |
+| `OnRoomJoined` | `RoomJoinedResponse` | Invité connecté à la room (aussi après une reconnexion) |
 | `OnStateReceived` | `StateUpdate` | Nouvel état reçu de l'hôte |
 | `OnGuestJoined` | `GuestChangedResponse` | Un invité rejoint |
 | `OnGuestLeft` | `GuestChangedResponse` | Un invité quitte |
 | `OnHostLeft` | — | L'hôte a quitté ou est déconnecté |
-| `OnError` | `string message` | Erreur (room pleine, code invalide, reconnexion impossible...) |
+| `OnError` | `string message` | Erreur (room pleine, code invalide, reconnexion impossible, fichier refusé à l'envoi...) |
 | `OnDisconnected` | — | Connexion perdue (la reconnexion automatique démarre) |
 | `OnReconnecting` | `int attempt` | À chaque tentative de reconnexion automatique |
 | `OnReconnected` | — | Reconnexion réussie, room restaurée |
+| `OnReconnectFailed` | — | Reconnexion automatique abandonnée (juste avant `OnError`) |
+| `OnCertificationChanged` | `bool? certified` | Certification de ton application connue (à chaque authentification réussie) |
+| `OnHostCertification` | `bool? certified` | (Invité) Certification de l'application de l'hôte, juste avant `OnRoomJoined` |
+
+### Modèle `RoomJoinedResponse`
+
+| Champ | Type | Description |
+|---|---|---|
+| `Code` | `string` | Code de la room |
+| `HostName` | `string` | Pseudo de l'hôte |
+| `GuestCount` | `int` | Nombre d'invités connectés |
+| `HostCertified` | `bool?` | Application de l'hôte certifiée (`true`), non certifiée (`false`) ou inconnue (`null`) |
+| `LastState` | `StateUpdate?` | Dernier état connu de la lecture |
 
 ### Modèle `StateUpdate`
 
