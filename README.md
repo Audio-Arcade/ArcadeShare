@@ -100,6 +100,24 @@ Chaque application qui utilise ArcadeShare doit posséder son propre `appId`, fo
 
 ## 1. Installation
 
+### Option A — NuGet (recommandé)
+
+Le SDK est publié sur NuGet sous le nom `ArcadeShare`. Choisis l'une de ces méthodes :
+
+**En ligne de commande** (dans le dossier de ton projet) :
+
+```bash
+dotnet add package ArcadeShare
+```
+
+**Dans Visual Studio** : clic droit sur le projet → *Gérer les packages NuGet* → onglet *Parcourir* → tape `ArcadeShare` → *Installer*.
+
+**Depuis le site** : [https://www.nuget.org/packages/ArcadeShare](https://www.nuget.org/packages/ArcadeShare)
+
+> ℹ️ Avec NuGet, les dépendances (`Newtonsoft.Json` et `System.Management`) sont installées automatiquement : tu n'as rien d'autre à ajouter.
+
+### Option B — Fichier DLL
+
 Télécharge d'abord le fichier `ArcadeShareServer.dll` :
 
 **[⬇ Télécharger ArcadeShareServer.dll](https://github.com/Audio-Arcade/Audio_Arcade_SDK/releases/download/V3/ArcadeShareServer.dll)**
@@ -118,6 +136,8 @@ Installe ensuite ces packages NuGet (clic droit sur le projet → *Gérer les pa
 |---|---|
 | Newtonsoft.Json | >= 13.0 |
 | System.Management | >= 8.0 |
+
+### Usings
 
 Ajoute ces usings en haut de tes fichiers :
 
