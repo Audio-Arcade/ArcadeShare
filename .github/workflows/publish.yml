@@ -2,11 +2,15 @@ name: Publish to NuGet
 
 on:
   release:
-    types: [published] # Se déclenche quand vous créez une Release sur GitHub
+    types: [published]
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    # AJOUT INDISPENSABLE : Donne l'autorisation à GitHub de s'authentifier auprès de NuGet
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
     - name: Checkout code
@@ -15,7 +19,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x' # Remplacez par '9.0.x' si vous utilisez .NET 9
+        dotnet-version: '8.0.x'
 
     - name: Restore dependencies
       run: dotnet restore ArcadeShareServer.sln
@@ -27,4 +31,5 @@ jobs:
       run: dotnet pack src/Audio_Arcade_SDK/Audio_Arcade_SDK.csproj --configuration Release --no-build --output nupkgs
 
     - name: Push to NuGet
-      run: dotnet nuget push "nupkgs/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://nuget.org --skip-duplicate
+      # MODIFICATION : On n'utilise plus ${{ secrets.NUGET_API_KEY }} car la connexion est automatique !
+      run: dotnet nuget push "nupkgs/*.nupkg" --source https://nuget.org --skip-duplicate
