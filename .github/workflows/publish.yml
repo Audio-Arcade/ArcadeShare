@@ -1,39 +1,26 @@
-name: Publish to NuGet
+name: Publish to GitHub Packages
 
 on:
   release:
     types: [published]
 
 jobs:
-  build-and-publish:
+  publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
+      packages: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+    - uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    - name: Restore dependencies
-      run: dotnet restore ArcadeShareServer.sln
+    - run: dotnet restore ArcadeShareServer.sln
+    - run: dotnet build ArcadeShareServer.sln --configuration Release --no-restore
+    - run: dotnet pack src/Audio_Arcade_SDK/Audio_Arcade_SDK.csproj --configuration Release --no-build --output nupkgs
 
-    - name: Build SDK
-      run: dotnet build ArcadeShareServer.sln --configuration Release --no-restore
-
-    - name: Pack SDK
-      run: dotnet pack src/Audio_Arcade_SDK/Audio_Arcade_SDK.csproj --configuration Release --no-build --output nupkgs
-
-    - name: NuGet login (OIDC)
-      uses: NuGet/login@v1
-      id: login
-      with:
-        user: La_TNT
-
-    - name: Push to NuGet
-      run: dotnet nuget push "nupkgs/*.nupkg" --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+    - name: Push to GitHub Packages
+      run: dotnet nuget push "nupkgs/*.nupkg" --api-key ${{ secrets.GITHUB_TOKEN }} --source "https://nuget.pkg.github.com/Audio-Arcade/index.json" --skip-duplicate
