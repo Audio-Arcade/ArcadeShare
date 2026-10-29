@@ -14,7 +14,7 @@
     <Version>3.0.0</Version>
     <Authors>La_TNT</Authors>
     <Description>Bibliothèque .NET pour créer des salles de partage et de synchronisation audio en temps réel via WebSocket.</Description>
-    <RepositoryUrl>https://github.com/Audio-Arcade/Audio_Arcade_SDK</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Audio-Arcade/ArcadeShare</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
