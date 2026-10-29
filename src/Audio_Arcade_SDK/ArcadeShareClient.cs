@@ -831,9 +831,10 @@ namespace ArcadeShare
             catch (OperationCanceledException) { }
         }
 
-        private async Task SendJsonAsync<T>(T obj) => await SendJsonInternalAsync(obj, injectIds: true);
+        private async Task SendJsonAsync<T>(T obj) where T : notnull
+            => await SendJsonInternalAsync(obj, injectIds: true);
 
-        private async Task SendJsonInternalAsync<T>(T obj, bool injectIds)
+        private async Task SendJsonInternalAsync<T>(T obj, bool injectIds) where T : notnull
         {
             if (_ws == null || _ws.State != WebSocketState.Open)
                 throw new InvalidOperationException("WebSocket non connecté. La reconnexion automatique est en cours si elle a été déclenchée.");
