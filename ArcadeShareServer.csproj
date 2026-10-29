@@ -9,7 +9,8 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 
     <!-- Métadonnées NuGet -->
-    <PackageId>Audio_Arcade_SDK</PackageId>
+    <PackageId>ArcadeShare</PackageId>
+	<Title>Arcade Share</Title>
     <Version>3.0.0</Version>
     <Authors>La_TNT</Authors>
     <Description>Bibliothèque .NET pour créer des salles de partage et de synchronisation audio en temps réel via WebSocket.</Description>
