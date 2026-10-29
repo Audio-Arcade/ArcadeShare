@@ -27,7 +27,7 @@ jobs:
       run: dotnet build ArcadeShareServer.sln --configuration Release --no-restore
 
     - name: Pack SDK
-      run: dotnet pack ArcadeShareServer.csproj --configuration Release --no-build --output nupkgs
+      run: dotnet pack **/*.csproj --configuration Release --no-build --output nupkgs
 
     - name: NuGet login (OIDC)
       uses: NuGet/login@v1
