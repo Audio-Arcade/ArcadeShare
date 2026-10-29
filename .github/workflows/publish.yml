@@ -7,7 +7,6 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    # AJOUT INDISPENSABLE : Donne l'autorisation à GitHub de s'authentifier auprès de NuGet
     permissions:
       id-token: write
       contents: read
@@ -30,6 +29,11 @@ jobs:
     - name: Pack SDK
       run: dotnet pack src/Audio_Arcade_SDK/Audio_Arcade_SDK.csproj --configuration Release --no-build --output nupkgs
 
+    - name: NuGet login (OIDC)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: Audio_Arcade
+
     - name: Push to NuGet
-      # MODIFICATION : On n'utilise plus ${{ secrets.NUGET_API_KEY }} car la connexion est automatique !
-      run: dotnet nuget push "nupkgs/*.nupkg" --source https://nuget.org --skip-duplicate
+      run: dotnet nuget push "nupkgs/*.nupkg" --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
