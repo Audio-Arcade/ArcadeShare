@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace ArcadeShareServer.Models
+namespace ArcadeShare.Models
 {
     public class CreateRoomMessage
     {

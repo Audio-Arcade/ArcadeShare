@@ -1,4 +1,4 @@
-using ArcadeShareServer.Models;
+using ArcadeShare.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -12,7 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ArcadeShareServer
+namespace ArcadeShare
 {
     public class ArcadeShareClient : IDisposable
     {
