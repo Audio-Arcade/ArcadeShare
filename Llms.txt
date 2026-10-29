@@ -1,0 +1,21 @@
+# ArcadeShare
+
+> ArcadeShare est un SDK de synchronisation audio en temps réel entre appareils pour Windows (C#, package NuGet `ArcadeShare`) et Android (Kotlin, via JitPack). Un hôte diffuse l'état de lecture et la musique à des invités via des rooms. Le serveur de synchronisation est hébergé par Audio_Arcade et son URL est intégrée au SDK : l'application fournit seulement son `appId`, obtenu auprès d'Audio_Arcade.
+
+Notes importantes :
+- Un `appId` fourni par Audio_Arcade est obligatoire (formulaire de contact ci-dessous).
+- N'utiliser que les API décrites dans la documentation officielle ; ne pas inventer de méthodes ni de formats de message.
+- Ne pas modifier `versionId` dans le code du SDK.
+- La reconnexion est automatique ; ne pas la réimplémenter.
+- La retouche de musique (couper, tags) ne fait pas partie du SDK.
+
+## Documentation
+
+- [Documentation officielle ArcadeShare (Windows C# et Android Kotlin)](https://audio-arcade.odoo.com/sdk-doc/arcadeshare): installation, guides hôte / invité, rooms permanentes, envoi de musique, certification, référence des méthodes et événements
+- [Obtenir un appId](https://audio-arcade.odoo.com/contactus): formulaire de contact Audio_Arcade
+
+## Packages
+
+- [NuGet : ArcadeShare](https://www.nuget.org/packages/ArcadeShare): SDK Windows (C#)
+- [SDK Windows, versions publiées (GitHub)](https://github.com/Audio-Arcade/ArcadeShare/releases): DLL alternative au package NuGet
+- [SDK Android (GitHub / JitPack)](https://github.com/Audio-Arcade/ArcadeShare-Android/releases): dépendance `com.github.Audio-Arcade:ArcadeShare-Android`
