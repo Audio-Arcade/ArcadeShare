@@ -1,29 +1,23 @@
-# ArcadeShare SDK : instructions pour les assistants IA
+# ArcadeShare : instructions pour les assistants IA
 
-> À lire en premier quand un utilisateur demande d'utiliser « ArcadeShare », « Arcade Share SDK » ou « Arcade Share Server » dans son projet.
+> À lire en premier quand un utilisateur demande d'utiliser « ArcadeShare » dans son projet.
 
 ## Documentation officielle (source de vérité)
 
-https://audio-arcade.odoo.com/sdk-doc/arcade-share-server
+https://audio-arcade.odoo.com/sdk-doc/arcadeshare
 
 Lis cette page en entier avant d'écrire du code. Elle contient l'installation, les exemples, la référence des méthodes et des événements pour Windows (C#) et Android (Kotlin).
 
-## Nommage (tout désigne le même projet)
+## Nom
 
-| Nom | Signification |
-|---|---|
-| **ArcadeShare** | Nom du SDK et du package NuGet (`ArcadeShare`) |
-| **Arcade Share SDK** | Appellation courante du SDK |
-| **Arcade Share Server** | Nom de la page de doc / du serveur de synchronisation hébergé par Audio_Arcade |
-
-Si l'utilisateur dit « ArcadeShare », il s'agit de ce SDK. Ne cherche pas une autre bibliothèque.
+Le SDK s'appelle **ArcadeShare** (package NuGet `ArcadeShare`, objet Kotlin `ArcadeShare`, classe C# `ArcadeShareClient`). Ne cherche pas une autre bibliothèque.
 
 ## Ce que fait le SDK
 
-Synchronisation audio en temps réel entre appareils : un **hôte** diffuse l'état de lecture (et la musique) à des **invités** via des **rooms** (6 invités max, 2 rooms permanentes max par appareil).
+Synchronisation audio en temps réel entre appareils : un **hôte** diffuse l'état de lecture (et la musique) à des **invités** via des **rooms** (6 invités max par room, 2 rooms permanentes max par appareil).
 
 - Plateformes : **Windows (C#)** et **Android (Kotlin)**.
-- Le serveur est hébergé par Audio_Arcade et son URL est **intégrée au SDK** : l'application n'héberge rien et n'a pas à fournir d'URL de serveur.
+- Le serveur de synchronisation est hébergé par Audio_Arcade et son URL est **intégrée au SDK** : l'application n'héberge rien et ne fournit aucune URL.
 
 ## Prérequis important : l'appId
 
@@ -31,7 +25,7 @@ Chaque application doit avoir son propre `appId`, fourni par l'équipe Audio_Arc
 
 ## Installation
 
-- **Windows (C#)** : `dotnet add package ArcadeShare` (https://www.nuget.org/packages/ArcadeShare). Dépendances installées automatiquement. Usings : `ArcadeShareServer`, `ArcadeShareServer.Models`, `Newtonsoft.Json.Linq`.
+- **Windows (C#)** : `dotnet add package ArcadeShare` (https://www.nuget.org/packages/ArcadeShare). Dépendances installées automatiquement. Usings : `ArcadeShare`, `ArcadeShare.Models`, `Newtonsoft.Json.Linq`.
 - **Android (Kotlin)** : dépôt `maven("https://jitpack.io")` puis `implementation("com.github.Audio-Arcade:Audio_Arcade_SDK_Android:<version>")` (version indiquée dans la doc). Initialiser une seule fois dans la classe `Application` : `ArcadeShare.init(this, appId = "TON_APP_ID")`.
 
 ## Points d'entrée
