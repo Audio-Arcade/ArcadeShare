@@ -22,7 +22,7 @@ jobs:
         dotnet-version: '8.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore ArcadeShareServer.sln
+      run: dotnet restore ArcadeShare.sln
 
     - name: Build SDK
       run: dotnet build ArcadeShare.sln --configuration Release --no-restore
