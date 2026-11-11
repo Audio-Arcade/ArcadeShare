@@ -118,17 +118,17 @@ dotnet add package ArcadeShare
 
 ### Option B — Fichier DLL
 
-Télécharge d'abord le fichier `ArcadeShareServer.dll` :
+Télécharge d'abord le fichier `ArcadeShare.dll` :
 
-**[⬇ Télécharger ArcadeShareServer.dll](https://github.com/Audio-Arcade/Audio_Arcade_SDK/releases/download/V3/ArcadeShareServer.dll)**
+**[⬇ Télécharger ArcadeShare.dll](https://github.com/Audio-Arcade/ArcadeShare/releases/download/v3.0.2/ArcadeShare.dll)**
 
 Ajoute le fichier suivant à ton projet Visual Studio :
 
 | Fichier | Rôle |
 |---|---|
-| `ArcadeShareServer.dll` | Client WebSocket compilé (URL du serveur intégrée) |
+| `ArcadeShare.dll` | Client WebSocket compilé (URL du serveur intégrée) |
 
-Clic droit sur **Dépendances** → **Ajouter une référence** → **Parcourir** → sélectionne `ArcadeShareServer.dll`.
+Clic droit sur **Dépendances** → **Ajouter une référence** → **Parcourir** → sélectionne `ArcadeShare.dll`.
 
 Installe ensuite ces packages NuGet (clic droit sur le projet → *Gérer les packages NuGet*) :
 
@@ -142,8 +142,8 @@ Installe ensuite ces packages NuGet (clic droit sur le projet → *Gérer les pa
 Ajoute ces usings en haut de tes fichiers :
 
 ```csharp
-using ArcadeShareServer;
-using ArcadeShareServer.Models;
+using ArcadeShare;
+using ArcadeShare.Models;
 using Newtonsoft.Json.Linq;
 ```
 
@@ -198,7 +198,7 @@ L'hôte diffuse l'état de lecture à tous ses invités en temps réel.
 ### Déclarer les champs nécessaires
 
 ```csharp
-private ArcadeShareClient _arcadeShareServer = null;
+private ArcadeShareClient _arcadeShare = null;
 private List<ArcadeShareClient> _permanentClients = new();
 private bool isCasting = false;
 ```
@@ -234,7 +234,7 @@ await client.CreateRoomAsync(
     username:     "Mon Pseudo",
     deviceSerial: GetDeviceSerial()
 );
-_arcadeShareServer = client;
+_arcadeShare = client;
 ```
 
 > ℹ️ La reconnexion après une coupure réseau est **automatique** (jusqu'à 25 tentatives, délai croissant plafonné à 15 s, soit environ 5 minutes — la durée pendant laquelle le serveur conserve la room de l'hôte) : n'ajoute pas ta propre logique dans `OnDisconnected`. Après une reconnexion, `OnRoomCreated` est déclenché à nouveau pour la même room : affiche ton message « Cast démarré » une seule fois. Si toutes les tentatives échouent, `OnReconnectFailed` est déclenché, puis `OnError`.
@@ -246,11 +246,11 @@ private void StartStateLoop()
 {
     _ = Task.Run(async () =>
     {
-        while (_arcadeShareServer != null && _arcadeShareServer.IsConnected && isCasting)
+        while (_arcadeShare != null && _arcadeShare.IsConnected && isCasting)
         {
             try
             {
-                await _arcadeShareServer.SendStateAsync(
+                await _arcadeShare.SendStateAsync(
                     position:  audioFile.CurrentTime.TotalSeconds,
                     isPlaying: !isPaused,
                     title:     trackName,
@@ -269,9 +269,9 @@ private void StartStateLoop()
 ### Arrêter le cast
 
 ```csharp
-await _arcadeShareServer.DisconnectAsync();
-_arcadeShareServer.Dispose();
-_arcadeShareServer = null;
+await _arcadeShare.DisconnectAsync();
+_arcadeShare.Dispose();
+_arcadeShare = null;
 isCasting = false;
 ```
 
@@ -327,7 +327,7 @@ private async Task<bool> StartPermanentCastAsync(string username, string deviceS
         await client.RejoinRoomAsync(code, username, deviceSerial);
     }
 
-    _arcadeShareServer = _permanentClients.FirstOrDefault();
+    _arcadeShare = _permanentClients.FirstOrDefault();
     return _permanentClients.Count > 0;
 }
 ```
@@ -350,10 +350,10 @@ L'invité rejoint une room avec son code. La musique est téléchargée automati
 ### Champs nécessaires
 
 ```csharp
-private ArcadeShareClient _arcadeShareServer = null;
+private ArcadeShareClient _arcadeShare = null;
 
 // Invité = connecté à la room d'un autre hôte
-private bool isGuest => _arcadeShareServer != null && !_arcadeShareServer.IsHost;
+private bool isGuest => _arcadeShare != null && !_arcadeShare.IsHost;
 
 private bool   _guestPausedManually = false;
 private string _guestCurrentKey     = "";
@@ -367,7 +367,7 @@ private bool   _guestIsLoading      = false;
 
 ```csharp
 var client = ArcadeShareConfig.CreateClient();
-_arcadeShareServer = client;   // dès maintenant : isGuest est vrai pendant la connexion
+_arcadeShare = client;   // dès maintenant : isGuest est vrai pendant la connexion
 
 client.OnRoomJoined += info =>
     Console.WriteLine($"Connecté chez {info.HostName}");   // info.HostCertified : true / false / null (voir section 7)
@@ -377,7 +377,7 @@ client.OnStateReceived += state =>
 
 client.OnHostLeft += () =>
 {
-    _arcadeShareServer = null;
+    _arcadeShare = null;
     client.Dispose();
     StopGuestPlayback();
 };
@@ -389,7 +389,7 @@ client.OnError += msg => Console.WriteLine(msg);   // room introuvable, room ple
 client.OnReconnecting += attempt => Console.WriteLine($"Reconnexion… ({attempt})");
 client.OnReconnectFailed += () =>      // abandon : quitte la room côté application
 {
-    _arcadeShareServer = null;
+    _arcadeShare = null;
     client.Dispose();
     StopGuestPlayback();
 };
@@ -498,9 +498,9 @@ private async Task<bool> LoadGuestMusicAsync(string roomCode, double startPos, b
 ### Quitter la room / arrêter la lecture invité
 
 ```csharp
-// Quitter : mettre _arcadeShareServer à null AVANT, pour réactiver les boutons
-var leaving = _arcadeShareServer;
-_arcadeShareServer = null;
+// Quitter : mettre _arcadeShare à null AVANT, pour réactiver les boutons
+var leaving = _arcadeShare;
+_arcadeShare = null;
 await leaving.DisconnectAsync();
 leaving.Dispose();
 StopGuestPlayback();
@@ -553,7 +553,7 @@ if (isCasting && _permanentClients.Count > 0 && File.Exists(currentFilePath))
 }
 
 // En fin de piste (optionnel — supprime le fichier côté serveur)
-await _arcadeShareServer.NotifyMusicEndedAsync();
+await _arcadeShare.NotifyMusicEndedAsync();
 ```
 
 | Contrainte | Valeur |
