@@ -11,13 +11,14 @@
     <!-- Métadonnées NuGet -->
     <PackageId>ArcadeShare</PackageId>
     <Title>Arcade Share</Title>
-    <Version>3.0.1</Version>
+    <Version>3.0.2</Version>
     <Authors>Audio_Arcade</Authors>
     <Description>Bibliothèque .NET pour créer des salles de partage et de synchronisation audio en temps réel via WebSocket.</Description>
     <RepositoryUrl>https://github.com/Audio-Arcade/ArcadeShare</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+	<Copyright>Copyright © 2024-2026 Audio_Arcade</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
