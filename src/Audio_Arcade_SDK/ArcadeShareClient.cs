@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,12 +17,12 @@ namespace ArcadeShare
 {
     public class ArcadeShareClient : IDisposable
     {
-        public const string SDK_VERSION = "3.0.0";
+        public const string SDK_VERSION = "4.0.0";
 
         public const string SERVER_URL = "wss://rooms.audio-arcade.fr.eu.org";
         public const string SERVER_HTTP_URL = "https://rooms.audio-arcade.fr.eu.org";
 
-        private const string VERSION_ID = "60482719365028471935";
+        private const string VERSION_ID = "14819458582669312352";
 
         public event Action<string>? OnRoomCreated;
         public event Action<RoomJoinedResponse>? OnRoomJoined;
@@ -44,6 +45,11 @@ namespace ArcadeShare
 
         /// <summary>Déclenché quand la reconnexion automatique a réussi et que l'état (room) a été restauré.</summary>
         public event Action? OnReconnected;
+        /// <summary>
+        /// Déclenché quand la reconnexion automatique est abandonnée (toutes les tentatives ont échoué).
+        /// Un événement <see cref="OnError"/> avec le motif suit immédiatement.
+        /// </summary>
+        public event Action? OnReconnectFailed;
 
         /// <summary>
         /// Déclenché quand le statut de certification de CETTE application est connu (réponse auth_ok du serveur).
@@ -111,13 +117,14 @@ namespace ArcadeShare
         /// chaque application intégrant le SDK doit posséder son propre identifiant,
         /// utilisé pour la traçabilité et pour autoriser/révoquer l'accès à une application spécifique.
         /// </param>
-        public ArcadeShareClient(string appId)
+        public ArcadeShareClient(string appId, ILinkTokenStore? linkStore = null)
         {
             if (string.IsNullOrWhiteSpace(appId))
                 throw new ArgumentException(
                     "appId est requis. Contactez l'équipe Audio_Arcade pour obtenir un identifiant d'application.");
 
             _appId = appId;
+            _linkStore = linkStore;
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────────
@@ -170,6 +177,16 @@ namespace ArcadeShare
             catch { return null; }
         }
 
+        public string Platform { get; set; } = DetectPlatform();
+
+        private static string DetectPlatform()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return "Windows";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return "macOS";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "Linux";
+            return "";
+        }
+
         // ── Connexion ────────────────────────────────────────────────────────────
 
         public async Task ConnectAsync(CancellationToken cancellationToken = default)
@@ -191,6 +208,7 @@ namespace ArcadeShare
             var token = cts.Token;
 
             _authTcs = new TaskCompletionSource<AuthResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _linkVerifiedThisConnection = false;
 
             await ws.ConnectAsync(new Uri(SERVER_URL), token);
 
@@ -263,6 +281,9 @@ namespace ArcadeShare
                 ["appId"] = _appId,
                 ["versionId"] = VERSION_ID
             };
+            string? linkToken = null;
+            try { linkToken = _linkStore?.Load(); } catch { }
+            if (!string.IsNullOrEmpty(linkToken)) body["linkToken"] = linkToken;
 
             using var content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
             using var response = await _http.PostAsync(
@@ -319,6 +340,157 @@ namespace ArcadeShare
             }
         }
 
+        // ── Compte Audio_Arcade lié (pseudo vérifié) ─────────────────────────────
+
+        private readonly ILinkTokenStore? _linkStore;
+        private readonly SemaphoreSlim _linkLock = new SemaphoreSlim(1, 1);
+        private TaskCompletionSource<LinkResult>? _linkTcs;
+        private volatile bool _linkVerifiedThisConnection;
+
+        private class LinkResult
+        {
+            public string Type = "";
+            public string? Token;
+            public string? Handle;
+            public string? Name;
+            public string? Message;
+        }
+
+        /// <summary>Pseudo réservé du compte lié, vérifié sur la connexion en cours (null = aucun).</summary>
+        public string? LinkedHandle { get; private set; }
+
+        /// <summary>Nom du compte lié, vérifié sur la connexion en cours (null = non lié ou non vérifié).</summary>
+        public string? LinkedName { get; private set; }
+
+        public bool IsLinked => LinkedName != null;
+
+        /// <summary>Un jeton de liaison est enregistré sur cet appareil (pas forcément encore vérifié).</summary>
+        public bool HasStoredLink
+        {
+            get { try { return !string.IsNullOrEmpty(_linkStore?.Load()); } catch { return false; } }
+        }
+
+        /// <summary>Le serveur indique que la liaison a été révoquée : le jeton local vient d'être supprimé.</summary>
+        public event Action? OnLinkRevoked;
+
+        private void SetLinked(string? handle, string? name)
+        {
+            LinkedHandle = handle;
+            LinkedName = name;
+        }
+
+        /// <summary>
+        /// Lie cet appareil à un compte Audio_Arcade grâce au code affiché sur la page « Mon compte » du site.
+        /// À appeler après <see cref="ConnectAsync"/>. Le jeton obtenu est enregistré via <see cref="ILinkTokenStore"/>.
+        /// </summary>
+        public async Task<(bool Ok, string? Handle, string? Error)> LinkAccountAsync(
+            string code, string deviceSerial, CancellationToken cancellationToken = default)
+        {
+            if (_linkStore == null)
+                throw new InvalidOperationException("Aucun ILinkTokenStore n'a été fourni au constructeur.");
+            if (string.IsNullOrWhiteSpace(code))
+                throw new ArgumentException("Le code ne peut pas être vide.");
+            if (string.IsNullOrWhiteSpace(deviceSerial))
+                throw new ArgumentException("deviceSerial ne peut pas être vide.");
+            if (!IsConnected)
+                throw new InvalidOperationException("Connectez-vous d'abord (ConnectAsync).");
+
+            var res = await RequestLinkAsync(
+                new LinkAccountMessage { Code = code.Trim(), DeviceSerial = deviceSerial, Platform = Platform },
+                TimeSpan.FromSeconds(10), cancellationToken);
+
+            if (res == null)
+                return (false, null, "Le serveur n'a pas répondu.");
+            if (res.Type != "link_ok" || string.IsNullOrEmpty(res.Token))
+                return (false, null, res.Message ?? "Liaison impossible.");
+
+            _linkStore.Save(res.Token);
+            _linkVerifiedThisConnection = true;
+            SetLinked(res.Handle, res.Name);
+            return (true, res.Handle, null);
+        }
+
+        /// <summary>Vérifie le jeton enregistré auprès du serveur. Retourne true si le compte est lié et vérifié.</summary>
+        public async Task<bool> VerifyLinkAsync(string deviceSerial)
+        {
+            await EnsureLinkVerifiedAsync(deviceSerial);
+            return IsLinked;
+        }
+
+        /// <summary>Oublie la liaison sur cet appareil. Pour la révoquer côté serveur, supprimer l'application dans « Mon compte ».</summary>
+        public void Unlink()
+        {
+            try { _linkStore?.Clear(); } catch { }
+            SetLinked(null, null);
+            _linkVerifiedThisConnection = false;
+        }
+
+        /// <summary>
+        /// Appelée automatiquement avant la création / la jointure d'une room : si un jeton est enregistré,
+        /// il est vérifié UNE fois par connexion. Un serveur injoignable ou muet n'empêche pas de continuer.
+        /// </summary>
+        private async Task EnsureLinkVerifiedAsync(string deviceSerial)
+        {
+            if (_linkStore == null || _linkVerifiedThisConnection || string.IsNullOrWhiteSpace(deviceSerial)) return;
+
+            string? token;
+            try { token = _linkStore.Load(); }
+            catch { return; }
+            if (string.IsNullOrEmpty(token)) return;
+
+            LinkResult? res;
+            try
+            {
+                res = await RequestLinkAsync(
+                    new LinkVerifyMessage { Token = token, DeviceSerial = deviceSerial, Platform = Platform },
+                    TimeSpan.FromSeconds(8), CancellationToken.None);
+            }
+            catch (InvalidOperationException) { return; }   // pas connecté : le message suivant échouera de toute façon
+
+            if (res == null) return;                         // pas de réponse : on continue sans vérification
+
+            switch (res.Type)
+            {
+                case "link_verified":
+                    _linkVerifiedThisConnection = true;
+                    SetLinked(res.Handle, res.Name);
+                    break;
+
+                case "link_invalid":                         // révoqué ou inconnu : on oublie le jeton
+                    try { _linkStore.Clear(); } catch { }
+                    SetLinked(null, null);
+                    OnLinkRevoked?.Invoke();
+                    break;
+
+                    // "link_error" : service de liaison indisponible → on GARDE le jeton et on continue
+            }
+        }
+
+        private async Task<LinkResult?> RequestLinkAsync<T>(
+            T message, TimeSpan timeout, CancellationToken cancellationToken) where T : notnull
+        {
+            await _linkLock.WaitAsync(cancellationToken);
+            try
+            {
+                var tcs = new TaskCompletionSource<LinkResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _linkTcs = tcs;
+
+                await SendJsonAsync(message);
+
+                using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var delay = Task.Delay(timeout, delayCts.Token);
+                var done = await Task.WhenAny(tcs.Task, delay);
+                delayCts.Cancel();
+
+                return done == tcs.Task ? await tcs.Task : null;
+            }
+            finally
+            {
+                _linkTcs = null;
+                _linkLock.Release();
+            }
+        }
+
         // ── Rooms (WebSocket) ────────────────────────────────────────────────────
 
         public async Task CreateRoomAsync(string username, string deviceSerial)
@@ -329,6 +501,7 @@ namespace ArcadeShare
             _isHost = true;
             _deviceSerial = deviceSerial;
             _lastUsername = username;
+            await EnsureLinkVerifiedAsync(deviceSerial);
 
             var msg = new CreateRoomMessage { Username = username.Trim(), DeviceSerial = deviceSerial };
             await SendJsonAsync(msg);
@@ -729,7 +902,10 @@ namespace ArcadeShare
             }
 
             if (!_intentionalDisconnect && !IsConnected)
+            {
+                OnReconnectFailed?.Invoke();
                 OnError?.Invoke("Impossible de se reconnecter au serveur.");
+            }
         }
 
         private void HandleMessage(string json)
@@ -804,6 +980,20 @@ namespace ArcadeShare
                         if (err != null) OnError?.Invoke(err.Message);
                         break;
 
+                    case "link_ok":
+                    case "link_verified":
+                    case "link_invalid":
+                    case "link_error":
+                        _linkTcs?.TrySetResult(new LinkResult
+                        {
+                            Type = type ?? "",
+                            Token = obj.Value<string>("token"),
+                            Handle = obj.Value<string>("handle"),
+                            Name = obj.Value<string>("name"),
+                            Message = obj.Value<string>("message")
+                        });
+                        break;
+
                     case "pong":
                         break;
                 }
@@ -872,6 +1062,7 @@ namespace ArcadeShare
             _ws?.Dispose();
             _cts?.Dispose();
             _sendLock.Dispose();
+            _linkLock.Dispose();
         }
     }
 }
