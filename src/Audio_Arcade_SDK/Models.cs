@@ -2,6 +2,22 @@ using Newtonsoft.Json;
 
 namespace ArcadeShare.Models
 {
+    public class LinkAccountMessage
+    {
+        [JsonProperty("type")] public string Type { get; } = "link_account";
+        [JsonProperty("code")] public string Code { get; set; } = "";
+        [JsonProperty("deviceSerial")] public string DeviceSerial { get; set; } = "";
+        [JsonProperty("platform")] public string Platform { get; set; } = "";
+    }
+
+    public class LinkVerifyMessage
+    {
+        [JsonProperty("type")] public string Type { get; } = "link_verify";
+        [JsonProperty("token")] public string Token { get; set; } = "";
+        [JsonProperty("deviceSerial")] public string DeviceSerial { get; set; } = "";
+        [JsonProperty("platform")] public string Platform { get; set; } = "";
+    }
+
     public class CreateRoomMessage
     {
         [JsonProperty("type")] public string Type { get; } = "create_room";
@@ -81,6 +97,7 @@ namespace ArcadeShare.Models
         [JsonProperty("type")] public string Type { get; set; } = "";
         [JsonProperty("code")] public string Code { get; set; } = "";
         [JsonProperty("hostCertified")] public bool? HostCertified { get; set; }
+        [JsonProperty("hostHandle")] public string? HostHandle { get; set; }
         [JsonProperty("guestCount")] public int GuestCount { get; set; }
         [JsonProperty("hostName")] public string HostName { get; set; } = "";
         [JsonProperty("lastState")] public StateUpdate? LastState { get; set; }
@@ -105,6 +122,7 @@ namespace ArcadeShare.Models
         [JsonProperty("type")] public string Type { get; set; } = "";
         [JsonProperty("guestCount")] public int GuestCount { get; set; }
         [JsonProperty("username")] public string Username { get; set; } = "";
+        [JsonProperty("verifiedHandle")] public string? VerifiedHandle { get; set; }
     }
 
     public class ErrorResponse
